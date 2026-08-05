@@ -246,24 +246,7 @@ impl<'a> EffectAssetPipeline<'a> {
         // Cache already scanned effect sprites
         self.ensure_effect_wan_cached(file_index)?;
 
-        // For shared WAN files (0/1), clone and apply palette_index offset per-effect
-        let wan_file_ref = if override_file_index.is_some() && effect_info.palette_index > 0 {
-            let mut cloned = self.wan_cache.get(&file_index).unwrap().clone();
-            let offset = effect_info.palette_index as u8;
-            let pal_count = cloned.custom_palette.len().max(1) as u8;
-            for frame in &mut cloned.frame_data {
-                for piece in &mut frame.pieces {
-                    piece.palette_index = piece.palette_index.wrapping_add(offset) % pal_count;
-                }
-            }
-            Some(cloned)
-        } else {
-            None
-        };
-
-        let wan_file = wan_file_ref
-            .as_ref()
-            .unwrap_or_else(|| self.wan_cache.get(&file_index).unwrap());
+        let wan_file = self.wan_cache.get(&file_index).unwrap();
 
         // Determine directionality based on ROM behavior
         let (is_directional, can_render_all_directions) =
