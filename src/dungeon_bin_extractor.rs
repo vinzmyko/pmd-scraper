@@ -7,111 +7,115 @@ use crate::{
         self,
         tileset::{self, render},
     },
-    progress::write_progress,
+    phases::PhaseId,
+    progress::ProgressReporter,
     rom::Rom,
 };
 const MAX_TILESET_ID: usize = 170;
 
-pub struct DungeonBinExtractor<'a> {
-    rom: &'a Rom,
+/// Reads and parses `dungeon.bin` once, for sharing between extractors.
+pub fn open_dungeon_bin(rom: &Rom) -> io::Result<BinPack> {
+    let file_id = rom
+        .fnt
+        .get_file_id("DUNGEON/dungeon.bin")
+        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "dungeon.bin not found"))?;
+
+    let data = rom
+        .fat
+        .get_file_data(file_id as usize, &rom.data)
+        .ok_or_else(|| {
+            io::Error::new(io::ErrorKind::InvalidData, "Failed to extract dungeon.bin")
+        })?;
+
+    println!("Parsing dungeon.bin...");
+    let binpack = BinPack::from_bytes(data)?;
+    println!("dungeon.bin contains {} files", binpack.len());
+
+    Ok(binpack)
 }
 
-impl<'a> DungeonBinExtractor<'a> {
-    pub fn new(rom: &'a Rom) -> Self {
-        DungeonBinExtractor { rom }
-    }
+pub fn extract_dungeon_tilesets(
+    binpack: &BinPack,
+    tileset_ids: Option<Vec<usize>>,
+    output_dir: &Path,
+    reporter: &mut ProgressReporter,
+    properties: Option<&[TilesetProperty]>,
+) -> io::Result<()> {
+    let ids: Vec<usize> = match tileset_ids {
+        Some(ids) => ids.into_iter().filter(|&id| id < MAX_TILESET_ID).collect(),
+        None => (0..MAX_TILESET_ID)
+            .filter(|id| !(144..170).contains(id))
+            .collect(),
+    };
 
-    pub fn extract_dungeon_tilesets(
-        &self,
-        tileset_ids: Option<Vec<usize>>,
-        output_dir: &Path,
-        progress_path: &Path,
-        properties: Option<&[TilesetProperty]>,
-    ) -> io::Result<()> {
-        let dungeon_bin_id = self
-            .rom
-            .fnt
-            .get_file_id("DUNGEON/dungeon.bin")
-            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "dungeon.bin not found"))?;
+    fs::create_dir_all(output_dir)?;
+    render::write_layout_json(output_dir)?;
 
-        let dungeon_bin_data = self
-            .rom
-            .fat
-            .get_file_data(dungeon_bin_id as usize, &self.rom.data)
-            .ok_or_else(|| {
-                io::Error::new(io::ErrorKind::InvalidData, "Failed to extract dungeon.bin")
-            })?;
+    let mut all_metadata = Vec::new();
 
-        println!("Parsing dungeon.bin...");
-        let binpack = BinPack::from_bytes(dungeon_bin_data)?;
-        println!("dungeon.bin contains {} files", binpack.len());
+    reporter.begin(PhaseId::DungeonTileset, ids.len());
 
-        let ids: Vec<usize> = match tileset_ids {
-            Some(ids) => ids.into_iter().filter(|&id| id < MAX_TILESET_ID).collect(),
-            None => (0..MAX_TILESET_ID)
-                .filter(|id| !(144..170).contains(id))
-                .collect(),
-        };
+    for &tileset_id in ids.iter() {
+        println!("Extracting tileset {}...", tileset_id);
 
-        fs::create_dir_all(output_dir)?;
-        render::write_layout_json(output_dir)?;
+        let property = properties.and_then(|p| p.get(tileset_id));
 
-        let mut all_metadata = Vec::new();
-
-        for (i, &tileset_id) in ids.iter().enumerate() {
-            println!("Extracting tileset {}...", tileset_id);
-
-            let property = properties.and_then(|p| p.get(tileset_id));
-
-            match tileset::extract_tileset(&binpack, tileset_id) {
-                Ok(tileset) => match render::render_tileset(&tileset, output_dir, property) {
-                    Ok(meta) => {
-                        let status = if meta.animated { "animated" } else { "static" };
-                        println!("  -> {} ({})", meta.filename, status);
-                        all_metadata.push(meta);
-                    }
-                    Err(e) => eprintln!("  -> Error rendering tileset {}: {}", tileset_id, e),
-                },
-                Err(e) => {
-                    eprintln!("  -> Error extracting tileset {}: {}", tileset_id, e);
+        match tileset::extract_tileset(binpack, tileset_id) {
+            Ok(tileset) => match render::render_tileset(&tileset, output_dir, property) {
+                Ok(meta) => {
+                    let status = if meta.animated { "animated" } else { "static" };
+                    println!("  -> {} ({})", meta.filename, status);
+                    all_metadata.push(meta);
                 }
+                Err(e) => eprintln!("  -> Error rendering tileset {}: {}", tileset_id, e),
+            },
+            Err(e) => {
+                eprintln!("  -> Error extracting tileset {}: {}", tileset_id, e);
             }
-
-            write_progress(
-                progress_path,
-                i + 1,
-                ids.len(),
-                "dungeon_tileset",
-                "running",
-            );
         }
 
-        render::write_tilesets_json(&all_metadata, output_dir)?;
-
-        // Shadow extraction
-        let shadow_output_dir = output_dir.parent().unwrap().join("shadows");
-        write_progress(progress_path, 0, 2, "dungeon_extras", "running");
-        println!("Extracting shadows...");
-        if let Err(e) = dungeon::shadows::extract_shadows(&binpack, &shadow_output_dir) {
-            eprintln!("  -> Error extracting shadows: {}", e);
-        }
-        write_progress(progress_path, 1, 2, "dungeon_extras", "running");
-
-        // Water ripple extraction
-        let ripple_output_dir = output_dir.parent().unwrap().join("ripples");
-        println!("Extracting water ripples...");
-        if let Err(e) = dungeon::ripples::extract_ripples(&binpack, &ripple_output_dir) {
-            eprintln!("  -> Error extracting ripples: {}", e);
-        }
-        write_progress(progress_path, 2, 2, "dungeon_extras", "running");
-
-        // Weather asset extraction (3D overlay textures + colvec colour table)
-        let weather_output_dir = output_dir.parent().unwrap().join("weather");
-        println!("Extracting weather assets...");
-        if let Err(e) = dungeon::weather::extract_weather_assets(&binpack, &weather_output_dir) {
-            eprintln!("  -> Error extracting weather assets: {}", e);
-        }
-
-        Ok(())
+        reporter.advance();
     }
+
+    render::write_tilesets_json(&all_metadata, output_dir)?;
+
+    Ok(())
+}
+
+/// Shadows, ripples, weather assets and trap icons.
+pub fn extract_dungeon_extras(
+    binpack: &BinPack,
+    dungeon_dir: &Path,
+    reporter: &mut ProgressReporter,
+) -> io::Result<()> {
+    reporter.begin(PhaseId::DungeonExtras, 4);
+
+    println!("Extracting shadows...");
+    if let Err(e) = dungeon::shadows::extract_shadows(binpack, &dungeon_dir.join("shadows")) {
+        eprintln!("  -> Error extracting shadows: {}", e);
+    }
+    reporter.advance();
+
+    println!("Extracting water ripples...");
+    if let Err(e) = dungeon::ripples::extract_ripples(binpack, &dungeon_dir.join("ripples")) {
+        eprintln!("  -> Error extracting ripples: {}", e);
+    }
+    reporter.advance();
+
+    // 3D overlay textures + colvec colour table
+    println!("Extracting weather assets...");
+    if let Err(e) = dungeon::weather::extract_weather_assets(binpack, &dungeon_dir.join("weather"))
+    {
+        eprintln!("  -> Error extracting weather assets: {}", e);
+    }
+    reporter.advance();
+
+    // ImgItm container, same format as item icons
+    println!("Extracting trap icons...");
+    if let Err(e) = dungeon::traps::extract_traps(binpack, &dungeon_dir.join("traps")) {
+        eprintln!("  -> Error extracting trap icons: {}", e);
+    }
+    reporter.advance();
+
+    Ok(())
 }

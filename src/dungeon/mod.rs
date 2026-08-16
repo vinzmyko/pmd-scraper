@@ -3,6 +3,7 @@ pub mod dungeon_names;
 pub mod ripples;
 pub mod shadows;
 pub mod tileset;
+pub mod traps;
 pub mod weather;
 
 use image::Rgba;
