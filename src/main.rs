@@ -11,6 +11,7 @@ mod pokemon_sprite_extractor;
 mod progress;
 mod rom;
 mod status_icon_extractor;
+mod text_utils;
 mod weather_manifest;
 
 mod containers;
