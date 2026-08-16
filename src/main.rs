@@ -4,6 +4,7 @@ mod binary_utils;
 mod dungeon_bin_extractor;
 mod effect_sprite_extractor;
 mod filesystem;
+mod item_data_extractor;
 mod move_data_extractor;
 mod move_effects_index;
 mod pokemon_portrait_extractor;
