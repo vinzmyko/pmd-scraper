@@ -1,34 +1,10 @@
-/// Extract move names from the text_e.str string table.
-///
-/// Move names are stored sequentially (by move ID order) in different regions of the string table
-/// depending on the game version. The indices below define the start and end positions for each version.
-///
-/// # String Block Indices for Move Names
-///
-/// ## Explorers of Sky (North America)
-/// - Game IDs: `EoS_NA`, `EoSWVC_NA`
-/// - Begin Index: **8173**
-/// - End Index: **8734**
-/// - Total Moves: 561
-///
-/// ## Explorers of Sky (Europe)
-/// - Game IDs: `EoS_EU`, `EoSWVC_EU`
-/// - Begin Index: **8175**
-/// - End Index: **8736**
-/// - Total Moves: 561
-///
-/// ## Explorers of Sky (Japan)
-/// - Game ID: `EoS_JP`
-/// - Begin Index: **4874**
-/// - End Index: **5435**
-/// - Total Moves: 561
-///
-/// # Notes
-/// - Currently hardcoded for EoS NA - update `MOVE_NAMES_BEGIN` constant for other regions
-/// - The string table also contains an alphabetical section (used for in-game menus)
-///   which should NOT be used for move ID mapping
+//! Move data extraction from `BALANCE/waza_p.bin`, joined against move names from the `text_*.str` string table.
+//!
+//! Block offsets are region-dependent and live in `RegionData`. The block length is region-invariant
+//! and lives in `data::text_strings`.
+
 use std::{
-    collections::HashMap,
+    collections::BTreeMap,
     fs::File,
     io::{self, Cursor},
     path::Path,
@@ -39,7 +15,9 @@ use serde::{Deserialize, Serialize};
 use crate::{
     binary_utils::{read_u16_le, read_u32_le, read_u8},
     containers::sir0::Sir0,
+    data::text_strings,
     rom::Rom,
+    text_utils::to_snake_case,
 };
 
 fn move_type_str(value: u8) -> String {
@@ -221,109 +199,23 @@ impl<'a> MoveDataExtractor<'a> {
         Ok(())
     }
 
-    /// Load move names from text_e.str
+    /// Load move names from the ROM's string table.
     fn load_move_names(&self) -> io::Result<Vec<String>> {
-        let possible_paths = [
-            "MESSAGE/text_e.str",
-            "MESSAGE/text_e.bin",
-            "MESSAGE/text_j.str",
-            "MESSAGE/text_j.bin",
-        ];
-
-        let text_data = possible_paths
-            .iter()
-            .find_map(|&path| {
-                self.rom
-                    .fnt
-                    .get_file_id(path)
-                    .and_then(|id| self.rom.fat.get_file_data(id as usize, &self.rom.data))
-            })
-            .ok_or_else(|| {
-                io::Error::new(
-                    io::ErrorKind::NotFound,
-                    "Could not find text_e.str or text_j.str in ROM",
-                )
-            })?;
-
-        println!("  Found text file: {} bytes", text_data.len());
-
-        let strings = self.parse_string_table(text_data)?;
-        println!("  Parsed {} total strings from text file", strings.len());
-
-        let move_names = self.extract_move_names_from_strings(&strings)?;
-
-        Ok(move_names)
-    }
-
-    /// Parse the text_*.str string table format
-    fn parse_string_table(&self, data: &[u8]) -> io::Result<Vec<String>> {
-        let mut cursor = Cursor::new(data);
-        let mut pointers = Vec::new();
-
-        loop {
-            if cursor.position() as usize + 4 > data.len() {
-                break;
-            }
-
-            let ptr = read_u32_le(&mut cursor)?;
-
-            if ptr as usize >= data.len() {
-                pointers.push(ptr);
-                break;
-            }
-
-            pointers.push(ptr);
-
-            if ptr == cursor.position() as u32 {
-                break;
-            }
-        }
-
-        println!("  Found {} string pointers", pointers.len());
-
-        let mut strings = Vec::with_capacity(pointers.len());
-
-        for i in 0..pointers.len() - 1 {
-            let start = pointers[i] as usize;
-            let end = pointers[i + 1] as usize;
-
-            if start >= data.len() || end > data.len() || start >= end {
-                strings.push(String::new());
-                continue;
-            }
-
-            let string_data = &data[start..end];
-            let null_pos = string_data
-                .iter()
-                .position(|&b| b == 0)
-                .unwrap_or(string_data.len());
-            let str_bytes = &string_data[..null_pos];
-
-            let text = String::from_utf8_lossy(str_bytes).to_string();
-            strings.push(text);
-        }
-
-        Ok(strings)
-    }
-
-    fn extract_move_names_from_strings(&self, strings: &[String]) -> io::Result<Vec<String>> {
-        const MOVE_NAMES_BEGIN: usize = 8173;
-        const MOVE_NAMES_END: usize = 8734;
-
-        if strings.len() < MOVE_NAMES_END {
+        let begin = self.rom.region_data.move_names_begin as usize;
+        if begin == 0 {
             return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!(
-                    "String table too small. Expected at least {} strings, got {}",
-                    MOVE_NAMES_END,
-                    strings.len()
-                ),
+                io::ErrorKind::Unsupported,
+                "Move name string block offset is not known for this region",
             ));
         }
 
-        let move_names = strings[MOVE_NAMES_BEGIN..MOVE_NAMES_END].to_vec();
+        let text_data = text_strings::load_text_file(self.rom)?;
+        println!("  Found text file: {} bytes", text_data.len());
 
-        Ok(move_names)
+        let strings = text_strings::parse_string_table(text_data)?;
+        println!("  Parsed {} total strings from text file", strings.len());
+
+        Ok(text_strings::block(&strings, begin, text_strings::MOVE_NAME_COUNT)?.to_vec())
     }
 
     /// Load waza_p.bin from ROM
@@ -446,29 +338,8 @@ impl<'a> MoveDataExtractor<'a> {
         })
     }
 
-    /// Save move lookup JSON (name -> ID mapping) with snake_case keys
     fn save_move_lookup(&self, moves: &[MoveData], output_dir: &Path) -> io::Result<()> {
-        fn to_snake_case(s: &str) -> String {
-            let mut result = String::with_capacity(s.len() + 3);
-
-            for (i, ch) in s.chars().enumerate() {
-                match ch {
-                    ' ' | '-' => result.push('_'),
-                    '\'' => continue,
-                    c if c.is_uppercase() => {
-                        if i > 0 && !result.ends_with('_') {
-                            result.push('_');
-                        }
-                        result.push(c.to_ascii_lowercase());
-                    }
-                    _ => result.push(ch.to_ascii_lowercase()),
-                }
-            }
-
-            result
-        }
-
-        let lookup: HashMap<String, u16> = moves
+        let lookup: BTreeMap<String, u16> = moves
             .iter()
             .enumerate()
             .map(|(idx, m)| (to_snake_case(&m.name), idx as u16))
@@ -489,7 +360,7 @@ impl<'a> MoveDataExtractor<'a> {
         let output_path = output_dir.join("move_data.json");
         let file = File::create(&output_path)?;
 
-        let move_map: HashMap<u16, &MoveData> = moves.iter().map(|m| (m.move_id, m)).collect();
+        let move_map: BTreeMap<u16, &MoveData> = moves.iter().map(|m| (m.move_id, m)).collect();
 
         serde_json::to_writer_pretty(file, &move_map)
             .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;

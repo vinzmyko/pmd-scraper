@@ -275,6 +275,13 @@ pub struct RegionData {
     pub effect_animation_table_offset: u32,
     pub effect_animation_entry_size: u32,
     pub tileset_properties_addr: u32,
+
+    /// Index of the first entry of each `text_*.str` block. Zero means
+    /// "not yet determined for this region". Callers must reject it.
+    pub move_names_begin: u32,
+    pub item_names_begin: u32,
+    pub item_short_desc_begin: u32,
+    pub item_long_desc_begin: u32,
 }
 
 pub const NA_REGION_DATA: RegionData = RegionData {
@@ -286,6 +293,10 @@ pub const NA_REGION_DATA: RegionData = RegionData {
     effect_animation_table_offset: 0x4152C,
     effect_animation_entry_size: 16,
     tileset_properties_addr: 0x022C631C,
+    move_names_begin: 8173,
+    item_names_begin: 6773,
+    item_short_desc_begin: 12104,
+    item_long_desc_begin: 10704,
 };
 
 pub const EU_REGION_DATA: RegionData = RegionData {
@@ -297,6 +308,10 @@ pub const EU_REGION_DATA: RegionData = RegionData {
     effect_animation_table_offset: 0x41654,
     effect_animation_entry_size: 16,
     tileset_properties_addr: 0, // TODO: unknown for EU
+    move_names_begin: 8175,
+    item_names_begin: 0,      // TODO: unknown for EU
+    item_short_desc_begin: 0, // TODO: unknown for EU
+    item_long_desc_begin: 0,  // TODO: unknown for EU
 };
 
 pub const JP_REGION_DATA: RegionData = RegionData {
@@ -308,6 +323,10 @@ pub const JP_REGION_DATA: RegionData = RegionData {
     effect_animation_table_offset: 0x41354,
     effect_animation_entry_size: 16,
     tileset_properties_addr: 0, // TODO: unknown for JP
+    move_names_begin: 4874,
+    item_names_begin: 0,      // TODO: unknown for JP
+    item_short_desc_begin: 0, // TODO: unknown for JP
+    item_long_desc_begin: 0,  // TODO: unknown for JP
 };
 
 pub fn get_region_data(game_code: &str) -> Option<RegionData> {
