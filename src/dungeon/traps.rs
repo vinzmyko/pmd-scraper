@@ -1,6 +1,6 @@
 //! Trap Icon Extraction
 //!
-//! Trap icons live in `dungeon.bin` as `traps.trp.img`, the same `ImgItm` container format as item icons 
+//! Trap icons live in `dungeon.bin` as `traps.trp.img`, the same `ImgItm` container format as item icons
 //! but with 24x24 cells rather than 16x16.
 //!
 //! TODO: The second palette is assumed to be the revealed/highlighted variant, but need to investigate.
@@ -35,9 +35,6 @@ struct TrapManifest {
 struct TrapEntry {
     sprite: usize,
     palette: usize,
-    /// Atlas coordinates of this trap's cell, in pixels.
-    x: u32,
-    y: u32,
 }
 
 pub fn extract_traps(binpack: &BinPack, output_dir: &Path) -> io::Result<()> {
@@ -55,18 +52,18 @@ pub fn extract_traps(binpack: &BinPack, output_dir: &Path) -> io::Result<()> {
     atlas
         .save(output_dir.join(ATLAS_FILENAME))
         .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-    println!("  -> {} ({}x{})", ATLAS_FILENAME, atlas.width(), atlas.height());
+    println!(
+        "  -> {} ({}x{})",
+        ATLAS_FILENAME,
+        atlas.width(),
+        atlas.height()
+    );
 
     let entries: BTreeMap<String, TrapEntry> = (0..img.sprite_count)
         .map(|sprite| {
             (
                 format!("trap_{:02}", sprite),
-                TrapEntry {
-                    sprite,
-                    palette: 0,
-                    x: 0,
-                    y: sprite as u32 * img.cell,
-                },
+                TrapEntry { sprite, palette: 0 },
             )
         })
         .collect();
@@ -81,8 +78,7 @@ pub fn extract_traps(binpack: &BinPack, output_dir: &Path) -> io::Result<()> {
     };
 
     let manifest_path = output_dir.join("traps.json");
-    serde_json::to_writer_pretty(fs::File::create(&manifest_path)?, &manifest)
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+    crate::json_out::write(&manifest_path, &manifest)?;
     println!("  -> traps.json ({} entries)", manifest.entries.len());
 
     Ok(())

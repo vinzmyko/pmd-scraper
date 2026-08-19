@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    fs::{self, File},
+    fs,
     path::{Path, PathBuf},
 };
 
@@ -56,12 +56,9 @@ impl<'a> AnimationInfoExtractor<'a> {
 
     /// Saves trap animation data to JSON
     fn save_trap_animations_json(&self, dir: &Path, trap_table: &[TrapAnim]) -> Result<(), String> {
-        let file_path = dir.join("traps.json");
-        let file =
-            File::create(&file_path).map_err(|e| format!("Failed to create traps.json: {}", e))?;
-
-        serde_json::to_writer_pretty(file, &trap_table)
-            .map_err(|e| format!("Failed to serialise trap animations: {}", e))?;
+        let file_path = dir.join("trap_animations.json");
+        crate::json_out::write(&file_path, trap_table)
+            .map_err(|e| format!("Failed to write trap_animations.json: {}", e))?;
 
         println!(
             "Trap animations saved to {} ({} entries)",
@@ -72,12 +69,9 @@ impl<'a> AnimationInfoExtractor<'a> {
     }
 
     fn save_item_animations_json(&self, dir: &Path, item_table: &[ItemAnim]) -> Result<(), String> {
-        let file_path = dir.join("items.json");
-        let file =
-            File::create(&file_path).map_err(|e| format!("Failed to create items.json: {}", e))?;
-
-        serde_json::to_writer_pretty(file, &item_table)
-            .map_err(|e| format!("Failed to serialise item animations: {}", e))?;
+        let file_path = dir.join("item_animations.json");
+        crate::json_out::write(&file_path, item_table)
+            .map_err(|e| format!("Failed to write item_animations.json: {}", e))?;
 
         println!(
             "Item animations saved to {} ({} entries)",
@@ -94,8 +88,6 @@ impl<'a> AnimationInfoExtractor<'a> {
         anim_data: &AnimData,
     ) -> Result<(), String> {
         let file_path = dir.join("move_animation_info.json");
-        let file = File::create(&file_path)
-            .map_err(|e| format!("Failed to create move_animation_info.json: {}", e))?;
 
         // Transform the raw move data to the final format with embedded special animations
         let move_map = anim_data.transform_move_data();
@@ -105,8 +97,8 @@ impl<'a> AnimationInfoExtractor<'a> {
             .map(|(idx, anim)| (idx.to_string(), anim))
             .collect();
 
-        serde_json::to_writer_pretty(file, &move_map_str)
-            .map_err(|e| format!("Failed to serialise move animations: {}", e))?;
+        crate::json_out::write(&file_path, &move_map_str)
+            .map_err(|e| format!("Failed to write move_animation_info.json: {}", e))?;
 
         println!(
             "Move animation info table saved to {} ({} entries)",
@@ -122,8 +114,6 @@ impl<'a> AnimationInfoExtractor<'a> {
         general_table: &[GeneralAnim],
     ) -> Result<(), String> {
         let file_path = dir.join("effect_animation_info.json");
-        let file = File::create(&file_path)
-            .map_err(|e| format!("Failed to create effect_animation_info.json: {}", e))?;
 
         // Create a JSON object mapping effect_id to general animation data
         let effect_map: HashMap<String, &GeneralAnim> = general_table
@@ -132,8 +122,8 @@ impl<'a> AnimationInfoExtractor<'a> {
             .map(|(idx, anim)| (idx.to_string(), anim))
             .collect();
 
-        serde_json::to_writer_pretty(file, &effect_map)
-            .map_err(|e| format!("Failed to serialise effect animations: {}", e))?;
+        crate::json_out::write(&file_path, &effect_map)
+            .map_err(|e| format!("Failed to write effect_animation_info.json: {}", e))?;
 
         println!(
             "Effect animation info table saved to {} ({} entries)",
@@ -144,9 +134,7 @@ impl<'a> AnimationInfoExtractor<'a> {
     }
 
     fn save_animation_summary(&self, dir: &Path, anim_data: &AnimData) -> Result<(), String> {
-        let file_path = dir.join("summary.json");
-        let file = File::create(&file_path)
-            .map_err(|e| format!("Failed to create summary.json: {}", e))?;
+        let file_path = dir.join("animation_summary.json");
 
         let summary = serde_json::json!({
             "trap_table_count": anim_data.trap_table.len(),
@@ -163,8 +151,8 @@ impl<'a> AnimationInfoExtractor<'a> {
             }
         });
 
-        serde_json::to_writer_pretty(file, &summary)
-            .map_err(|e| format!("Failed to serialise animation summary: {}", e))?;
+        crate::json_out::write(&file_path, &summary)
+            .map_err(|e| format!("Failed to write animation_summary.json: {}", e))?;
 
         println!("Animation summary saved to {}", file_path.display());
         Ok(())

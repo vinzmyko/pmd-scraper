@@ -70,7 +70,5 @@ pub fn parse_tileset_properties(
 }
 
 pub fn save_json(props: &[TilesetProperty], path: &Path) -> std::io::Result<()> {
-    let json = serde_json::to_string_pretty(props)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
-    std::fs::write(path, json)
+    crate::json_out::write(path, props)
 }

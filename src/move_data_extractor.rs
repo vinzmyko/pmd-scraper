@@ -5,7 +5,6 @@
 
 use std::{
     collections::BTreeMap,
-    fs::File,
     io::{self, Cursor},
     path::Path,
 };
@@ -346,11 +345,7 @@ impl<'a> MoveDataExtractor<'a> {
             .collect();
 
         let output_path = output_dir.join("move_lookup.json");
-        let file = File::create(&output_path)?;
-
-        serde_json::to_writer_pretty(file, &lookup)
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-
+        crate::json_out::write(&output_path, &lookup)?;
         println!("  Saved move lookup to {}", output_path.display());
         Ok(())
     }
@@ -358,13 +353,9 @@ impl<'a> MoveDataExtractor<'a> {
     /// Save full move data JSON
     fn save_move_data(&self, moves: &[MoveData], output_dir: &Path) -> io::Result<()> {
         let output_path = output_dir.join("move_data.json");
-        let file = File::create(&output_path)?;
-
         let move_map: BTreeMap<u16, &MoveData> = moves.iter().map(|m| (m.move_id, m)).collect();
 
-        serde_json::to_writer_pretty(file, &move_map)
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-
+        crate::json_out::write(&output_path, &move_map)?;
         println!("  Saved move data to {}", output_path.display());
         Ok(())
     }

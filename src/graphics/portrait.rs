@@ -1,14 +1,11 @@
 use std::{
     collections::HashMap,
     convert::TryInto,
-    fs::File,
-    io::Write,
     path::{Path, PathBuf},
 };
 
 use image::RgbaImage;
 use oxipng::{self, InFile, OutFile};
-use serde_json;
 
 use crate::containers::{compression::at4px::At4pxContainer, ContainerHandler};
 
@@ -367,15 +364,7 @@ fn copy_image_to_atlas(atlas: &mut RgbaImage, portrait: &RgbaImage, x: usize, y:
 }
 
 fn save_metadata(metadata: &HashMap<String, (usize, usize)>, path: &PathBuf) -> Result<(), String> {
-    let json_string = serde_json::to_string_pretty(&metadata)
-        .map_err(|e| format!("Failed to serialise HashMap: {}", e))?;
-
-    let mut file = File::create(path).map_err(|e| format!("Failed to create file: {}", e))?;
-
-    file.write_all(json_string.as_bytes())
-        .map_err(|e| format!("Failed to write to file: {}", e))?;
-
-    Ok(())
+    crate::json_out::write(path, metadata).map_err(|e| format!("Failed to write metadata: {}", e))
 }
 
 /// Optimises a PNG file using oxipng for better compression

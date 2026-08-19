@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    fs::{self, File},
+    fs::{self},
     io::{self},
     path::Path,
 };
@@ -26,7 +26,8 @@ use crate::{
         AnimationDetails, AnimationSequence, EffectDefinition, EffectLayer, MoveData,
         MoveEffectTrigger, MoveEffectsIndex, ScreenEffect, ScreenFrameInfo, SpriteEffect,
     },
-    progress::write_progress,
+    phases::PhaseId,
+    progress::ProgressReporter,
     rom::Rom,
 };
 
@@ -56,8 +57,7 @@ impl<'a> EffectAssetPipeline<'a> {
         effects_map: &HashMap<u16, EffectAnimationInfo>,
         moves_map: &HashMap<usize, MoveAnimationInfo>,
         output_dir: &Path,
-        progress_path: &Path,
-        total_effects: usize,
+        reporter: &mut ProgressReporter,
     ) -> io::Result<()> {
         println!("\n--- Starting Effect Asset Pipeline ---");
 
@@ -74,6 +74,8 @@ impl<'a> EffectAssetPipeline<'a> {
         let mut sorted_effect_ids: Vec<_> = effects_map.keys().collect();
         sorted_effect_ids.sort();
 
+        reporter.begin(PhaseId::MoveEffectSprites, sorted_effect_ids.len());
+
         for effect_id in sorted_effect_ids {
             let effect_info = &effects_map[effect_id];
             let anim_type = effect_info.anim_type;
@@ -88,13 +90,6 @@ impl<'a> EffectAssetPipeline<'a> {
                     match self.process_sprite_effect(*effect_id, effect_info, &sprites_dir, None) {
                         Ok(Some(entry)) => {
                             effects_processed += 1;
-                            write_progress(
-                                progress_path,
-                                effects_processed,
-                                total_effects,
-                                "move_effect_sprites",
-                                "running",
-                            );
                             Some(entry)
                         }
                         Ok(None) => {
@@ -113,13 +108,6 @@ impl<'a> EffectAssetPipeline<'a> {
                     {
                         Ok(Some(entry)) => {
                             effects_processed += 1;
-                            write_progress(
-                                progress_path,
-                                effects_processed,
-                                total_effects,
-                                "move_effect_sprites",
-                                "running",
-                            );
                             Some(entry)
                         }
                         Ok(None) => {
@@ -138,13 +126,6 @@ impl<'a> EffectAssetPipeline<'a> {
                     {
                         Ok(Some(entry)) => {
                             effects_processed += 1;
-                            write_progress(
-                                progress_path,
-                                effects_processed,
-                                total_effects,
-                                "move_effect_sprites",
-                                "running",
-                            );
                             Some(entry)
                         }
                         Ok(None) => {
@@ -162,13 +143,6 @@ impl<'a> EffectAssetPipeline<'a> {
                     match self.process_screen_effect(*effect_id, effect_info, &sprites_dir) {
                         Ok(Some(entry)) => {
                             effects_processed += 1;
-                            write_progress(
-                                progress_path,
-                                effects_processed,
-                                total_effects,
-                                "move_effect_sprites",
-                                "running",
-                            );
                             Some(entry)
                         }
                         Ok(None) => {
@@ -192,6 +166,9 @@ impl<'a> EffectAssetPipeline<'a> {
             if let Some(entry) = effect_entry {
                 index.effects.insert(effect_id.to_string(), entry);
             }
+
+            // Skips and errors are still work done.
+            reporter.advance();
         }
 
         println!("Populating moves data...");
@@ -667,12 +644,7 @@ impl<'a> EffectAssetPipeline<'a> {
     fn save_index(&self, index: &MoveEffectsIndex, output_dir: &Path) -> io::Result<()> {
         let output_path = output_dir.join("asset_index.json");
         println!("Writing final index to {}...", output_path.display());
-
-        let file = File::create(&output_path)?;
-        serde_json::to_writer_pretty(file, index)
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-
-        Ok(())
+        crate::json_out::write(&output_path, index)
     }
 
     fn save_effect_sprite_png(&self, image: &image::RgbaImage, path: &Path) -> io::Result<()> {

@@ -69,27 +69,141 @@ pub struct WeatherEntry {
 
 pub fn build() -> WeatherManifest {
     let drift_modes = vec![
-        DriftMode { mode: 0, dx: 0,     dy: 0,     label: "None" },
-        DriftMode { mode: 1, dx: 0,     dy: STEP,  label: "South" },
-        DriftMode { mode: 2, dx: STEP,  dy: STEP,  label: "South-East" },
-        DriftMode { mode: 3, dx: STEP,  dy: 0,     label: "East" },
-        DriftMode { mode: 4, dx: STEP,  dy: -STEP, label: "North-East" },
-        DriftMode { mode: 5, dx: 0,     dy: -STEP, label: "North" },
-        DriftMode { mode: 6, dx: -STEP, dy: -STEP, label: "North-West" },
-        DriftMode { mode: 7, dx: -STEP, dy: 0,     label: "West" },
-        DriftMode { mode: 8, dx: -STEP, dy: STEP,  label: "South-West" },
-        DriftMode { mode: 9, dx: 0,     dy: 0,     label: "Sine (inert)" },
+        DriftMode {
+            mode: 0,
+            dx: 0,
+            dy: 0,
+            label: "None",
+        },
+        DriftMode {
+            mode: 1,
+            dx: 0,
+            dy: STEP,
+            label: "South",
+        },
+        DriftMode {
+            mode: 2,
+            dx: STEP,
+            dy: STEP,
+            label: "South-East",
+        },
+        DriftMode {
+            mode: 3,
+            dx: STEP,
+            dy: 0,
+            label: "East",
+        },
+        DriftMode {
+            mode: 4,
+            dx: STEP,
+            dy: -STEP,
+            label: "North-East",
+        },
+        DriftMode {
+            mode: 5,
+            dx: 0,
+            dy: -STEP,
+            label: "North",
+        },
+        DriftMode {
+            mode: 6,
+            dx: -STEP,
+            dy: -STEP,
+            label: "North-West",
+        },
+        DriftMode {
+            mode: 7,
+            dx: -STEP,
+            dy: 0,
+            label: "West",
+        },
+        DriftMode {
+            mode: 8,
+            dx: -STEP,
+            dy: STEP,
+            label: "South-West",
+        },
+        DriftMode {
+            mode: 9,
+            dx: 0,
+            dy: 0,
+            label: "Sine (inert)",
+        },
     ];
 
     let weathers = vec![
-        WeatherEntry { weather_id: 0, name: "clear",     colvec_row: 0, precip_effect_change: None,      precip_effect_entry: None,      overlay_texture: None,                       drift_mode: None },
-        WeatherEntry { weather_id: 1, name: "sunny",     colvec_row: 1, precip_effect_change: Some(331), precip_effect_entry: Some(331), overlay_texture: None,                       drift_mode: None },
-        WeatherEntry { weather_id: 2, name: "sandstorm", colvec_row: 2, precip_effect_change: Some(239), precip_effect_entry: Some(239), overlay_texture: Some("sandstorm_1005.png"), drift_mode: Some(3) },
-        WeatherEntry { weather_id: 3, name: "cloudy",    colvec_row: 3, precip_effect_change: None,      precip_effect_entry: None,      overlay_texture: None,                       drift_mode: None },
-        WeatherEntry { weather_id: 4, name: "rain",      colvec_row: 4, precip_effect_change: Some(16),  precip_effect_entry: Some(440), overlay_texture: None,                       drift_mode: None },
-        WeatherEntry { weather_id: 5, name: "hail",      colvec_row: 5, precip_effect_change: Some(20),  precip_effect_entry: Some(20),  overlay_texture: None,                       drift_mode: None },
-        WeatherEntry { weather_id: 6, name: "fog",       colvec_row: 6, precip_effect_change: None,      precip_effect_entry: None,      overlay_texture: Some("fog_1001.png"),       drift_mode: Some(3) },
-        WeatherEntry { weather_id: 7, name: "snow",      colvec_row: 7, precip_effect_change: Some(223), precip_effect_entry: Some(223), overlay_texture: None,                       drift_mode: None },
+        WeatherEntry {
+            weather_id: 0,
+            name: "clear",
+            colvec_row: 0,
+            precip_effect_change: None,
+            precip_effect_entry: None,
+            overlay_texture: None,
+            drift_mode: None,
+        },
+        WeatherEntry {
+            weather_id: 1,
+            name: "sunny",
+            colvec_row: 1,
+            precip_effect_change: Some(331),
+            precip_effect_entry: Some(331),
+            overlay_texture: None,
+            drift_mode: None,
+        },
+        WeatherEntry {
+            weather_id: 2,
+            name: "sandstorm",
+            colvec_row: 2,
+            precip_effect_change: Some(239),
+            precip_effect_entry: Some(239),
+            overlay_texture: Some("sandstorm_1005.png"),
+            drift_mode: Some(3),
+        },
+        WeatherEntry {
+            weather_id: 3,
+            name: "cloudy",
+            colvec_row: 3,
+            precip_effect_change: None,
+            precip_effect_entry: None,
+            overlay_texture: None,
+            drift_mode: None,
+        },
+        WeatherEntry {
+            weather_id: 4,
+            name: "rain",
+            colvec_row: 4,
+            precip_effect_change: Some(16),
+            precip_effect_entry: Some(440),
+            overlay_texture: None,
+            drift_mode: None,
+        },
+        WeatherEntry {
+            weather_id: 5,
+            name: "hail",
+            colvec_row: 5,
+            precip_effect_change: Some(20),
+            precip_effect_entry: Some(20),
+            overlay_texture: None,
+            drift_mode: None,
+        },
+        WeatherEntry {
+            weather_id: 6,
+            name: "fog",
+            colvec_row: 6,
+            precip_effect_change: None,
+            precip_effect_entry: None,
+            overlay_texture: Some("fog_1001.png"),
+            drift_mode: Some(3),
+        },
+        WeatherEntry {
+            weather_id: 7,
+            name: "snow",
+            colvec_row: 7,
+            precip_effect_change: Some(223),
+            precip_effect_entry: Some(223),
+            overlay_texture: None,
+            drift_mode: None,
+        },
     ];
 
     WeatherManifest {
@@ -124,14 +238,15 @@ pub fn build_and_save(output_dir: &Path) -> io::Result<()> {
         .chain(manifest.weathers.iter().filter_map(|w| w.overlay_texture))
     {
         if !tex_dir.join(f).exists() {
-            eprintln!("  -> Warning: weather manifest references missing texture {}", f);
+            eprintln!(
+                "  -> Warning: weather manifest references missing texture {}",
+                f
+            );
         }
     }
 
-    let json = serde_json::to_string_pretty(&manifest)
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
     let path = output_dir.join("weather.json");
-    std::fs::write(&path, json)?;
+    crate::json_out::write(&path, &manifest)?;
     println!("Wrote weather manifest to {}", path.display());
     Ok(())
 }

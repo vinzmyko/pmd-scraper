@@ -3,7 +3,7 @@
 //! Creates a JSON file describing the atlas layout, animations,
 //! directions, frame properties, and anchor point for positioning.
 
-use std::{collections::HashMap, fs::File, path::Path};
+use std::{collections::HashMap, path::Path};
 
 use serde::{Deserialize, Serialize};
 
@@ -230,7 +230,6 @@ pub fn generate_metadata(
 
 /// Saves the generated AtlasMetadata to a JSON file
 pub fn save_metadata(metadata: &AtlasMetadata, path: &Path) -> Result<(), super::AtlasError> {
-    let file = File::create(path)?;
-    serde_json::to_writer_pretty(file, metadata)?;
+    crate::json_out::write(path, metadata)?;
     Ok(())
 }

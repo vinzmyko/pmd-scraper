@@ -2,7 +2,7 @@
 //!
 //! Converts parsed dungeon data into an organised 8×6×3 tileset image.
 
-use std::{collections::BTreeMap, fs, io, path::Path};
+use std::{collections::BTreeMap, io, path::Path};
 
 use image::{Rgba, RgbaImage};
 use serde::Serialize;
@@ -236,20 +236,14 @@ pub fn write_layout_json(output_dir: &Path) -> Result<(), io::Error> {
         tiles,
     };
 
-    let json = serde_json::to_string_pretty(&layout)
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-    fs::write(output_dir.join("layout.json"), json)?;
-    Ok(())
+    crate::json_out::write(&output_dir.join("layout.json"), &layout)
 }
 
 pub fn write_tilesets_json(
     metadata: &[TilesetMetadata],
     output_dir: &Path,
 ) -> Result<(), io::Error> {
-    let json = serde_json::to_string_pretty(metadata)
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-    fs::write(output_dir.join("tilesets.json"), json)?;
-    Ok(())
+    crate::json_out::write(&output_dir.join("tilesets.json"), metadata)
 }
 
 fn render_organised_sheet(tileset: &DungeonTileset) -> RgbaImage {

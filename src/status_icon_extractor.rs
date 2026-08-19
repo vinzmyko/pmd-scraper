@@ -12,7 +12,8 @@ use serde::Serialize;
 use crate::{
     binary_utils::{read_u16_le, read_u32_le, read_u8},
     containers::sir0::Sir0,
-    progress::write_progress,
+    phases::PhaseId,
+    progress::ProgressReporter,
     rom::Rom,
 };
 
@@ -286,7 +287,11 @@ impl<'a> StatusIconExtractor<'a> {
         StatusIconExtractor { rom }
     }
 
-    pub fn extract(&mut self, output_dir: &Path, progress_path: &Path) -> io::Result<()> {
+    pub fn extract(
+        &mut self,
+        output_dir: &Path,
+        reporter: &mut ProgressReporter,
+    ) -> io::Result<()> {
         fs::create_dir_all(output_dir)?;
 
         if !self.rom.loaded_overlays.contains_key(&29) {
@@ -320,8 +325,9 @@ impl<'a> StatusIconExtractor<'a> {
 
         let mut metadata = serde_json::Map::new();
         let total_icons = BIT_FLAGS.len() + 1;
+        reporter.begin(PhaseId::StatusIcons, total_icons);
 
-        for (i, &(bit, flag_name)) in BIT_FLAGS.iter().enumerate() {
+        for &(bit, flag_name) in BIT_FLAGS.iter() {
             let table_idx = bit as usize + 1;
             let (anim_idx, pal_idx) = rom_table[table_idx];
 
@@ -337,7 +343,7 @@ impl<'a> StatusIconExtractor<'a> {
                 }
             }
 
-            write_progress(progress_path, i + 1, total_icons, "status_icons", "running");
+            reporter.advance();
         }
 
         // Persistent freeze icon: table index 33
@@ -361,18 +367,10 @@ impl<'a> StatusIconExtractor<'a> {
             }
         }
 
-        write_progress(
-            progress_path,
-            total_icons,
-            total_icons,
-            "status_icons",
-            "running",
-        );
+        reporter.advance();
 
         let json_path = output_dir.join("status_icons.json");
-        let json = serde_json::to_string_pretty(&metadata)
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-        fs::write(&json_path, json)?;
+        crate::json_out::write(&json_path, &metadata)?;
         println!("Saved status icon metadata to {}", json_path.display());
 
         Ok(())

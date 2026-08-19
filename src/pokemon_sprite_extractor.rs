@@ -6,21 +6,11 @@ use std::{
 };
 
 use crate::{
-    binary_utils::read_u16_le,
-    containers::{
-        binpack::BinPack,
-        compression::pkdpx::PkdpxContainer,
-        sir0::{self},
-        ContainerHandler,
-    },
-    data::{monster_md::MonsterData, MonsterEntry},
-    graphics::{
-        atlas::{create_pokemon_atlas, AtlasConfig},
-        wan::{parser, Animation, AnimationStructure, FrameOffset, WanFile},
-        WanType,
-    },
-    progress::write_progress,
-    rom::Rom,
+    binary_utils::read_u16_le, containers::{
+        ContainerHandler, binpack::BinPack, compression::pkdpx::PkdpxContainer, sir0::{self}
+    }, data::{MonsterEntry, monster_md::MonsterData}, graphics::{
+        WanType, atlas::{AtlasConfig, create_pokemon_atlas}, wan::{Animation, AnimationStructure, FrameOffset, WanFile, parser}
+    }, phases::PhaseId, progress::ProgressReporter, rom::Rom
 };
 
 /// Groups shared data and configuration for processing multiple Pokémon
@@ -46,7 +36,7 @@ impl<'a> PokemonSpriteExtractor<'a> {
         &self,
         pokemon_ids: Option<u32>,
         output_dir: &Path,
-        progress_path: &Path,
+        reporter: &mut ProgressReporter,
     ) -> io::Result<()> {
         // Load all necessary data files
         let monster_md_id = self
@@ -100,7 +90,7 @@ impl<'a> PokemonSpriteExtractor<'a> {
         // make it num_pokemon
         if let Some(ids) = pokemon_ids {
             let mut list = Vec::new();
-            for id in 0..=ids {
+            for id in 1..=ids {
                 let entry = &monster_md[id as usize];
                 let folder_name = if id == 537 {
                     "pokemon_000".to_string()
@@ -168,16 +158,11 @@ impl<'a> PokemonSpriteExtractor<'a> {
         };
 
         // Process the clean filtered list
-        for (i, (id, folder_name)) in final_list.iter().enumerate() {
+        reporter.begin(PhaseId::PokemonSprite, final_list.len());
+        for (id, folder_name) in final_list.iter() {
             let entry = &monster_md[*id];
-            self.process_pokemon(*id, entry, &folder_name, &context)?;
-            write_progress(
-                progress_path,
-                i + 1,
-                final_list.len(),
-                "pokemon_sprite",
-                "running",
-            );
+            self.process_pokemon(*id, entry, folder_name, &context)?;
+            reporter.advance();
         }
 
         Ok(())
