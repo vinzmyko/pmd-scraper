@@ -20,8 +20,10 @@ jobs:
           targets: x86_64-unknown-linux-musl, x86_64-pc-windows-gnu
 
       - name: Install dependencies
+        timeout-minutes: 5
         run: |
-          sudo apt-get update
+          sudo sed -i 's|azure.archive.ubuntu.com|archive.ubuntu.com|g' /etc/apt/apt-mirrors.txt
+          sudo apt-get update -o Acquire::Retries=1 -o Acquire::http::Timeout=15
           sudo apt-get install -y musl-tools mingw-w64
 
       - name: Build Linux (static musl)
