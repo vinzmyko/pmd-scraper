@@ -51,6 +51,9 @@ struct Cli {
     output_dir: PathBuf,
     #[arg(long)]
     progress: Option<PathBuf>,
+    /// Path to a file the client touches to prove it is alive. Absent = no check.
+    #[arg(long)]
+    heartbeat: Option<PathBuf>,
     #[arg(long)]
     num_pokemon: Option<u32>,
     #[arg(long)]
@@ -98,7 +101,7 @@ fn main() {
         }
     }
 
-    let mut reporter = ProgressReporter::new(cli.progress.clone());
+    let mut reporter = ProgressReporter::new(cli.progress.clone(), cli.heartbeat.clone());
 
     let mut rom = match Rom::new(rom_path) {
         Ok(rom) => rom,

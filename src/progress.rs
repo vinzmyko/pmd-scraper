@@ -1,24 +1,40 @@
 use std::{
     fs,
-    path::PathBuf,
+    path::{Path, PathBuf},
+    time::Duration,
 };
 
 use serde_json::json;
 
 use crate::phases::PhaseId;
 
+/// The client touches its heartbeat at 2Hz. 10s is 20 missed ticks.
+const HEARTBEAT_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Missing file counts as stale: the client deletes it on a clean stop, and a
+/// crashed client never created one.
+fn heartbeat_is_stale(path: &Path, timeout: Duration) -> bool {
+    match fs::metadata(path).and_then(|m| m.modified()) {
+        // Err from elapsed() means mtime is in the future — clock skew, treat as fresh.
+        Ok(mtime) => mtime.elapsed().map(|age| age > timeout).unwrap_or(false),
+        Err(_) => true,
+    }
+}
+
 pub struct ProgressReporter {
     path: Option<PathBuf>,
+    heartbeat: Option<PathBuf>,
     phase: Option<PhaseId>,
     current: usize,
     total: usize,
 }
 
 impl ProgressReporter {
-    /// `None` disables reporting entirely; every method becomes a no-op.
-    pub fn new(path: Option<PathBuf>) -> Self {
+    /// `path: None` disables reporting. `heartbeat: None` disables the liveness check.
+    pub fn new(path: Option<PathBuf>, heartbeat: Option<PathBuf>) -> Self {
         ProgressReporter {
             path,
+            heartbeat,
             phase: None,
             current: 0,
             total: 0,
@@ -34,8 +50,19 @@ impl ProgressReporter {
     }
 
     pub fn advance(&mut self) {
+        self.exit_if_abandoned();
         self.current += 1;
         self.write("running", None);
+    }
+
+    /// Deliberately writes nothing before exiting: the output tree stays
+    /// unmarked so a recovering client rescrapes rather than trusting it.
+    fn exit_if_abandoned(&self) {
+        let Some(hb) = &self.heartbeat else { return };
+        if heartbeat_is_stale(hb, HEARTBEAT_TIMEOUT) {
+            eprintln!("Client heartbeat stale, exiting");
+            std::process::exit(0);
+        }
     }
 
     /// Keeps the last real phase name so the terminal state isn't blank.
