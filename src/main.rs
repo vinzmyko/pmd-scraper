@@ -13,6 +13,7 @@ mod pokemon_portrait_extractor;
 mod pokemon_sprite_extractor;
 mod progress;
 mod rom;
+mod scrape_info;
 mod status_icon_extractor;
 mod text_utils;
 mod weather_manifest;
@@ -45,7 +46,7 @@ use {
 #[command(name = "pmd_scraper")]
 #[command(author, version, about, long_about = None)]
 struct Cli {
-    #[arg(value_name = "ROM_PATH", required_unless_present = "list_phases")]
+    #[arg(value_name = "ROM_PATH", required_unless_present_any = ["list_phases", "scraper_version"])]
     rom_path: Option<PathBuf>,
     #[arg(short, long, value_name = "OUTPUT_DIR", default_value = "./output")]
     output_dir: PathBuf,
@@ -59,6 +60,8 @@ struct Cli {
     #[arg(long)]
     list_phases: bool,
     #[arg(long)]
+    scraper_version: bool,
+    #[arg(long)]
     pretty: bool,
     /// Emit item names and descriptions in items.json.
     #[arg(long)]
@@ -67,6 +70,11 @@ struct Cli {
 
 fn main() {
     let cli = Cli::parse();
+
+    if cli.scraper_version {
+        println!("{}", scrape_info::SCRAPER_VERSION);
+        return;
+    }
 
     if cli.list_phases {
         for phase in PhaseId::ALL {
@@ -241,6 +249,12 @@ fn main() {
                 reporter.advance();
             }
         }
+    }
+
+    let info = scrape_info::ScrapeInfo::new(cli.num_pokemon.unwrap_or(0), &rom.id_code);
+    if let Err(e) = scrape_info::write(&cli.output_dir, &info) {
+        eprintln!("Failed to write scrape_info.json: {}", e);
+        std::process::exit(1);
     }
 
     reporter.complete();
