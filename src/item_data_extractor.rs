@@ -9,7 +9,7 @@
 
 use std::{
     collections::BTreeMap,
-    fs::{self, File},
+    fs::{self},
     io,
     path::Path,
 };
@@ -46,16 +46,18 @@ struct ItemManifest {
 #[derive(Serialize)]
 struct ItemEntry {
     id: usize,
-    key: String,
-    name: String,
-    name_raw: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    name_raw: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     short_desc: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     long_desc: Option<String>,
+    /// Atlas row. Required by the client's manifest detection — do not prune.
     sprite: u8,
+    /// Atlas column. Required by the client's manifest detection — do not prune.
     palette: u8,
-    /// Atlas coordinates of this item's cell, in pixels.
-    x: u32,
-    y: u32,
     category: u8,
     category_name: &'static str,
     buy_price: u16,
@@ -93,7 +95,12 @@ impl<'a> ItemDataExtractor<'a> {
         ItemDataExtractor { rom }
     }
 
-    pub fn extract_and_save(&self, binpack: &BinPack, output_dir: &Path) -> io::Result<()> {
+    pub fn extract_and_save(
+        &self,
+        binpack: &BinPack,
+        output_dir: &Path,
+        with_text: bool,
+    ) -> io::Result<()> {
         println!("Starting item data extraction...");
 
         let (names, short_desc, long_desc) = self.load_strings()?;
@@ -128,7 +135,14 @@ impl<'a> ItemDataExtractor<'a> {
             atlas.height()
         );
 
-        let entries = build_entries(&items, &exclusives, &names, &short_desc, &long_desc, &img);
+        let entries = build_entries(
+            &items,
+            &exclusives,
+            &names,
+            &short_desc,
+            &long_desc,
+            with_text,
+        );
         println!("  Built {} manifest entries", entries.len());
 
         let manifest = ItemManifest {
@@ -141,8 +155,7 @@ impl<'a> ItemDataExtractor<'a> {
         };
 
         let manifest_path = output_dir.join("items.json");
-        serde_json::to_writer_pretty(File::create(&manifest_path)?, &manifest)
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+        crate::json_out::write(&manifest_path, &manifest)?;
         println!("  Wrote {}", manifest_path.display());
 
         println!("Item data extraction complete!");
@@ -235,7 +248,7 @@ fn build_entries(
     names: &[String],
     short_desc: &[String],
     long_desc: &[String],
-    img: &ImgItm,
+    with_text: bool,
 ) -> BTreeMap<String, ItemEntry> {
     let mut entries = BTreeMap::new();
     let mut seen: BTreeMap<String, usize> = BTreeMap::new();
@@ -272,18 +285,23 @@ fn build_entries(
             });
 
         entries.insert(
-            key.clone(),
+            key,
             ItemEntry {
                 id,
-                key,
-                name,
-                name_raw,
-                short_desc: short_desc.get(id).map(|s| strip_tags(s)),
-                long_desc: long_desc.get(id).map(|s| strip_tags(s)),
+                name: with_text.then(|| name.clone()),
+                name_raw: if with_text { Some(name_raw) } else { None },
+                short_desc: if with_text {
+                    short_desc.get(id).map(|s| strip_tags(s))
+                } else {
+                    None
+                },
+                long_desc: if with_text {
+                    long_desc.get(id).map(|s| strip_tags(s))
+                } else {
+                    None
+                },
                 sprite: item.sprite,
                 palette: item.palette,
-                x: item.palette as u32 * img.cell,
-                y: item.sprite as u32 * img.cell,
                 category: item.category as u8,
                 category_name: item.category.as_key(),
                 buy_price: item.buy_price,

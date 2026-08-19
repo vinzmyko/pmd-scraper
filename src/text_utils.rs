@@ -1,5 +1,33 @@
 //! String utils for JSON key gen and display names.
 
+/// CP1252 mappings for 0x80..=0xFF. `\u{FFFD}` marks bytes with no CP1252
+/// assignment. If these show up in output the ROM is using that slot for a
+/// game glyph and needs an override here.
+const HIGH: [char; 128] = [
+    '€', '\u{FFFD}', '‚', 'ƒ', '„', '…', '†', '‡', 'ˆ', '‰', 'Š', '‹', 'Œ', '\u{FFFD}', 'Ž',
+    '\u{FFFD}', '\u{FFFD}', '\u{2018}', '\u{2019}', '“', '”', '•', '–', '—', '˜', '™', 'š', '›',
+    'œ', '\u{FFFD}', 'ž', 'Ÿ', '\u{A0}', '¡', '¢', '£', '¤', '¥', '¦', '§', '¨', '©', 'ª', '«',
+    '¬', '\u{AD}', '®', '¯', '°', '±', '²', '³', '´', 'µ', '¶', '·', '¸', '¹', 'º', '»', '¼', '½',
+    '¾', '¿', 'À', 'Á', 'Â', 'Ã', 'Ä', 'Å', 'Æ', 'Ç', 'È', 'É', 'Ê', 'Ë', 'Ì', 'Í', 'Î', 'Ï', 'Ð',
+    'Ñ', 'Ò', 'Ó', 'Ô', 'Õ', 'Ö', '×', 'Ø', 'Ù', 'Ú', 'Û', 'Ü', 'Ý', 'Þ', 'ß', 'à', 'á', 'â', 'ã',
+    'ä', 'å', 'æ', 'ç', 'è', 'é', 'ê', 'ë', 'ì', 'í', 'î', 'ï', 'ð', 'ñ', 'ò', 'ó', 'ô', 'õ', 'ö',
+    '÷', 'ø', 'ù', 'ú', 'û', 'ü', 'ý', 'þ', 'ÿ',
+];
+
+/// Decodes a PMD text-table string. Single-byte, ASCII-transparent.
+pub fn decode_pmd(bytes: &[u8]) -> String {
+    bytes
+        .iter()
+        .map(|&b| {
+            if b < 0x80 {
+                b as char
+            } else {
+                HIGH[(b - 0x80) as usize]
+            }
+        })
+        .collect()
+}
+
 /// Strips PMD presentation markup: `[FT:1]`, `[CS]`, `[CLUM_SET:9]`, etc.
 /// Pattern: `[` + two uppercase letters + optional `:...` + `]`.
 pub fn strip_tags(s: &str) -> String {
@@ -14,7 +42,7 @@ pub fn strip_tags(s: &str) -> String {
                 continue;
             }
         }
-        // Not a tag; copy one full UTF-8 char
+        // Not a tag. Copy one full UTF-8 char
         let ch_len = utf8_len(bytes[i]);
         out.push_str(&s[i..i + ch_len]);
         i += ch_len;
@@ -25,18 +53,23 @@ pub fn strip_tags(s: &str) -> String {
 
 /// If a tag starts at `open`, returns the index just past its `]`.
 fn tag_end(bytes: &[u8], open: usize) -> Option<usize> {
-    if open + 3 >= bytes.len() {
+    let mut i = open + 1;
+
+    // Tag name.
+    let name_start = i;
+    while i < bytes.len() && (bytes[i].is_ascii_uppercase() || bytes[i] == b'_') {
+        i += 1;
+    }
+    if i == name_start {
         return None;
     }
-    if !bytes[open + 1].is_ascii_uppercase() || !bytes[open + 2].is_ascii_uppercase() {
-        return None;
-    }
-    match bytes[open + 3] {
-        b']' => Some(open + 4),
-        b':' => bytes[open + 4..]
+
+    match bytes.get(i)? {
+        b']' => Some(i + 1),
+        b':' => bytes[i + 1..]
             .iter()
             .position(|&b| b == b']')
-            .map(|p| open + 4 + p + 1),
+            .map(|p| i + 1 + p + 1),
         _ => None,
     }
 }

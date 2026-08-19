@@ -76,7 +76,7 @@ pub fn parse_string_table(data: &[u8]) -> io::Result<Vec<String>> {
 
         let slice = &data[start..end];
         let null_pos = slice.iter().position(|&b| b == 0).unwrap_or(slice.len());
-        strings.push(String::from_utf8_lossy(&slice[..null_pos]).to_string());
+        strings.push(crate::text_utils::decode_pmd(&slice[..null_pos]));
     }
 
     Ok(strings)
