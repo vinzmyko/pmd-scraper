@@ -6,11 +6,22 @@ use std::{
 };
 
 use crate::{
-    binary_utils::read_u16_le, containers::{
-        ContainerHandler, binpack::BinPack, compression::pkdpx::PkdpxContainer, sir0::{self}
-    }, data::{MonsterEntry, monster_md::MonsterData}, graphics::{
-        WanType, atlas::{AtlasConfig, create_pokemon_atlas}, wan::{Animation, AnimationStructure, FrameOffset, WanFile, parser}
-    }, phases::PhaseId, progress::ProgressReporter, rom::Rom
+    binary_utils::read_u16_le,
+    containers::{
+        binpack::BinPack,
+        compression::pkdpx::PkdpxContainer,
+        sir0::{self},
+        ContainerHandler,
+    },
+    data::{monster_md::MonsterData, MonsterEntry},
+    graphics::{
+        atlas::{create_pokemon_atlas, AtlasConfig},
+        wan::{parser, Animation, AnimationStructure, FrameOffset, WanFile},
+        WanType,
+    },
+    phases::PhaseId,
+    progress::ProgressReporter,
+    rom::Rom,
 };
 
 /// Groups shared data and configuration for processing multiple Pokémon
