@@ -625,6 +625,11 @@ fn read_effect_meta_frames(
                 break;
             }
 
+            let piece_start = cursor.position() as usize;
+            let data: &[u8] = *cursor.get_ref();
+            let b = &data[piece_start..piece_start + 10];
+            let raw = [0, 2, 4, 6, 8].map(|i| u16::from_le_bytes([b[i], b[i + 1]]));
+
             cursor.read_exact(&mut [0u8; 3])?;
             let _draw_value = read_u8(cursor)?;
             let y_data = read_u16_le(cursor)?;
@@ -652,6 +657,7 @@ fn read_effect_meta_frames(
                 y_offset,
                 resolution_idx,
                 is_256_colour: is_256_colour_file,
+                raw,
             }));
 
             if is_last {
@@ -1103,6 +1109,7 @@ fn read_meta_frames(
                 y_offset,
                 resolution_idx,
                 is_256_colour,
+                raw: [img_index as u16, _unk0, attr0, attr1, attr2],
             }));
 
             if (attr1 & super::flags::ATTR1_IS_LAST_MASK) != 0 {

@@ -3,7 +3,7 @@
 //! This module defines the core data structures used to represent
 //! WAN sprite data
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 
 use super::{flags, WanType, DIM_TABLE, TEX_SIZE};
 
@@ -34,6 +34,31 @@ pub struct WanFile {
     pub max_sequences_per_group: u16,
     pub offset_table_size: usize,
 }
+
+impl WanFile {
+    /// Distinct `draw_order_offset`s used by the given sequences of an effect WAN,
+    /// sorted ascending. Empty for character WANs or missing sequences.
+    pub fn effect_draw_order_offsets(
+        &self,
+        sequences: impl IntoIterator<Item = usize>,
+    ) -> BTreeSet<i8> {
+        let AnimationStructure::Effect(groups) = &self.animations else {
+            return BTreeSet::new();
+        };
+        let Some(group) = groups.first() else {
+            return BTreeSet::new();
+        };
+        sequences
+            .into_iter()
+            .filter_map(|seq| group.get(seq))
+            .flat_map(|anim| &anim.frames)
+            .filter_map(|frame| self.frame_data.get(frame.frame_index as usize))
+            .flat_map(|meta| &meta.pieces)
+            .map(MetaFramePiece::draw_order_offset)
+            .collect()
+    }
+}
+
 /// A collection of image data strips
 #[derive(Debug, Clone)]
 pub struct ImgPiece {
@@ -57,6 +82,9 @@ pub struct MetaFramePiece {
     pub y_offset: i16,
     pub resolution_idx: usize,
     pub is_256_colour: bool,
+
+    /// Raw 5 x u16 piece words as stored in the WAN.
+    pub raw: [u16; 5],
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -69,6 +97,9 @@ pub struct MetaFramePieceArgs {
     pub y_offset: i16,
     pub resolution_idx: usize,
     pub is_256_colour: bool,
+
+    /// Raw 5 x u16 piece words as stored in the WAN.
+    pub raw: [u16; 5],
 }
 
 impl MetaFramePiece {
@@ -82,7 +113,14 @@ impl MetaFramePiece {
             y_offset: args.y_offset,
             resolution_idx: args.resolution_idx,
             is_256_colour: args.is_256_colour,
+            raw: args.raw,
         }
+    }
+
+    /// Signed offset added to the sprite's draw order to pick this piece's bucket
+    /// (ROM `FUN_0201b6d4`). High byte of `piece[1]`.
+    pub fn draw_order_offset(&self) -> i8 {
+        (self.raw[1] >> 8) as u8 as i8
     }
 
     pub fn get_dimensions(&self) -> (usize, usize) {
