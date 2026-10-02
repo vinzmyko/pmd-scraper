@@ -48,6 +48,22 @@ pub struct SpriteEffect {
     pub base_animation_index: u32,
     /// If true, game continues without waiting for animation to complete
     pub is_non_blocking: bool,
+    /// Signed offset added to the effect's draw order. The single value for uniform
+    /// effects, 0 for mixed effects.
+    pub draw_order_offset: i8,
+    /// Every distinct per-piece draw order offset, sorted ascending.
+    pub draw_order_offsets: Vec<i8>,
+    /// One sheet per offset for mixed effects.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub layers: Vec<SpriteLayer>,
+}
+
+/// One draw order layer of a mixed effect.
+#[derive(Serialize, Debug)]
+pub struct SpriteLayer {
+    pub draw_order_offset: i8,
+    /// Same convention as `SpriteEffect::sprite_sheet`.
+    pub sprite_sheet: String,
 }
 
 /// Defines a sequence of animation frames

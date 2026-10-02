@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{BTreeSet, HashMap},
     fs::{self},
     io::{self},
     path::Path,
@@ -25,6 +25,7 @@ use crate::{
     move_effects_index::{
         AnimationDetails, AnimationSequence, EffectDefinition, EffectLayer, MoveData,
         MoveEffectTrigger, MoveEffectsIndex, ScreenEffect, ScreenFrameInfo, SpriteEffect,
+        SpriteLayer,
     },
     phases::PhaseId,
     progress::ProgressReporter,
@@ -236,17 +237,27 @@ impl<'a> EffectAssetPipeline<'a> {
             );
         }
 
+        let rendered_sequences = if is_directional && can_render_all_directions {
+            base_anim_index..base_anim_index + 8
+        } else {
+            base_anim_index..base_anim_index + 1
+        };
+        let draw_order =
+            DrawOrderOffsets::from_set(wan_file.effect_draw_order_offsets(rendered_sequences));
+        if draw_order.is_mixed() {
+            println!(" -> Mixed draw order offsets {:?}", draw_order.0);
+        }
+
         if is_directional && can_render_all_directions {
-            // Render 8 separate sprite sheets, one per direction
             self.process_directional_effect(
                 effect_id,
                 effect_info,
                 wan_file,
                 base_anim_index,
+                &draw_order,
                 sprites_dir,
             )
         } else {
-            // Render single sprite sheet (non-directional or fallback)
             if is_directional && !can_render_all_directions {
                 println!(
                     " -> WARNING: Directional effect but base_index {} + 7 >= sequence_count {}. Falling back to single sheet.",
@@ -258,6 +269,7 @@ impl<'a> EffectAssetPipeline<'a> {
                 effect_info,
                 wan_file,
                 base_anim_index,
+                &draw_order,
                 sprites_dir,
             )
         }
@@ -314,157 +326,152 @@ impl<'a> EffectAssetPipeline<'a> {
         })
     }
 
-    /// Processes a directional effect by rendering 8 separate sprite sheets.
-    /// Uses a two-pass approach:
-    /// 1. First pass: Calculate unified canvas dimensions across all 8 directions
-    /// 2. Second pass: Render all directions using those unified dimensions
+    /// Processes a directional effect: 8 flattened sheets, plus 8 per draw order layer
+    /// for mixed effects. Every sheet shares one canvas box across all directions and
+    /// layers so they line up when stacked.
     fn process_directional_effect(
         &self,
         effect_id: u16,
         effect_info: &EffectAnimationInfo,
         wan_file: &WanFile,
         base_anim_index: usize,
+        draw_order: &DrawOrderOffsets,
         sprites_dir: &Path,
     ) -> io::Result<Option<EffectDefinition>> {
-        // Calculate unified canvas box across all 8 directions
-        let unified_canvas_box = self.calculate_unified_canvas_box(wan_file, base_anim_index);
+        let Some(canvas_box) = self.calculate_unified_canvas_box(wan_file, base_anim_index) else {
+            println!(" -> WARNING: Could not calculate unified canvas. Skipping effect.");
+            return Ok(None);
+        };
+        let frame_width = (canvas_box.2 - canvas_box.0) as u32;
+        let frame_height = (canvas_box.3 - canvas_box.1) as u32;
+        println!(
+            " -> Unified canvas: {}x{} (from box {:?})",
+            frame_width, frame_height, canvas_box
+        );
 
-        let unified_canvas_box = match unified_canvas_box {
-            Some(box_dims) => {
-                let width = box_dims.2 - box_dims.0;
-                let height = box_dims.3 - box_dims.1;
-                println!(
-                    " -> Unified canvas: {}x{} (from box {:?})",
-                    width, height, box_dims
-                );
-                box_dims
-            }
-            None => {
-                println!(" -> WARNING: Could not calculate unified canvas. Skipping effect.");
+        for offset in draw_order.sheet_variants() {
+            let any_rendered = self.save_directional_sheets(
+                effect_id,
+                offset,
+                wan_file,
+                base_anim_index,
+                canvas_box,
+                sprites_dir,
+            )?;
+            if offset.is_none() && !any_rendered {
+                println!(" -> WARNING: No directions rendered successfully. Skipping effect.");
                 return Ok(None);
             }
-        };
-
-        let frame_width = (unified_canvas_box.2 - unified_canvas_box.0) as u32;
-        let frame_height = (unified_canvas_box.3 - unified_canvas_box.1) as u32;
-
-        // Render all 8 directions using unified dimensions
-        let mut any_rendered = false;
-        let mut first_animation_sequence = None;
-
-        for direction in 0u8..8 {
-            let anim_index = base_anim_index + direction as usize;
-
-            match renderer::render_effect_animation_sheet_with_canvas(
-                wan_file,
-                anim_index,
-                Some(unified_canvas_box),
-            ) {
-                Ok(Some((sprite_sheet, _fw, _fh))) => {
-                    // Save with direction suffix: {effect_id}_dir{0-7}.png
-                    let sheet_filename = format!("{}_dir{}.png", effect_id, direction);
-                    let sheet_path = sprites_dir.join(&sheet_filename);
-                    self.save_effect_sprite_png(&sprite_sheet, &sheet_path)?;
-
-                    // Get animation sequence from first direction for timing data
-                    if !any_rendered {
-                        first_animation_sequence = match &wan_file.animations {
-                            AnimationStructure::Effect(groups) => groups
-                                .first()
-                                .and_then(|group| group.get(anim_index).cloned()),
-                            AnimationStructure::Character(_) => None,
-                        };
-                    }
-
-                    any_rendered = true;
-                    println!(" -> Direction {}: saved {}", direction, sheet_filename);
-                }
-                Ok(None) => {
-                    println!(" -> Direction {}: empty/no visible pixels", direction);
-                }
-                Err(e) => {
-                    eprintln!(" -> Direction {}: render error: {:?}", direction, e);
-                }
-            }
         }
 
-        if !any_rendered {
-            println!(" -> WARNING: No directions rendered successfully. Skipping effect.");
-            return Ok(None);
-        }
-
-        // Build effect definition with directional info
+        // The 8 direction sequences share frame counts and timing, so direction 0 stands in.
         let effect_definition = self.build_sprite_effect_definition_directional(
             effect_info,
             effect_id,
             base_anim_index,
             frame_width,
             frame_height,
-            first_animation_sequence.as_ref(),
+            effect_sequence(wan_file, base_anim_index),
             true,
             8,
+            draw_order,
         );
 
         println!(
-            " -> SUCCESS: 8 directional sprite sheets saved (unified {}x{})",
+            " -> SUCCESS: directional sprite sheets saved (unified {}x{})",
             frame_width, frame_height
         );
         Ok(Some(effect_definition))
     }
 
-    /// Processes a non-directional effect by rendering a single sprite sheet.
+    /// Renders and saves the 8 direction sheets for one layer (`Some(offset)`) or for the
+    /// flattened effect (`None`). Returns whether any direction rendered.
+    fn save_directional_sheets(
+        &self,
+        effect_id: u16,
+        offset: Option<i8>,
+        wan_file: &WanFile,
+        base_anim_index: usize,
+        canvas_box: (i16, i16, i16, i16),
+        sprites_dir: &Path,
+    ) -> io::Result<bool> {
+        let stem = sheet_stem(effect_id, offset);
+        let mut any_rendered = false;
+
+        for direction in 0..8 {
+            match renderer::render_effect_animation_sheet_with_canvas(
+                wan_file,
+                base_anim_index + direction,
+                Some(canvas_box),
+                offset,
+            ) {
+                Ok(Some((sprite_sheet, _, _))) => {
+                    let filename = format!("{}_dir{}.png", stem, direction);
+                    self.save_effect_sprite_png(&sprite_sheet, &sprites_dir.join(&filename))?;
+                    println!(" -> Direction {}: saved {}", direction, filename);
+                    any_rendered = true;
+                }
+                Ok(None) => println!(" -> Direction {}: empty/no visible pixels", direction),
+                Err(e) => eprintln!(" -> Direction {}: render error: {:?}", direction, e),
+            }
+        }
+
+        Ok(any_rendered)
+    }
+
+    /// Processes a non-directional effect: one flattened sheet, plus one per draw order
+    /// layer for mixed effects, all on the same canvas box.
     fn process_non_directional_effect(
         &self,
         effect_id: u16,
         effect_info: &EffectAnimationInfo,
         wan_file: &WanFile,
         anim_index: usize,
+        draw_order: &DrawOrderOffsets,
         sprites_dir: &Path,
     ) -> io::Result<Option<EffectDefinition>> {
-        match renderer::render_effect_animation_sheet(wan_file, anim_index) {
-            Ok(Some((sprite_sheet, frame_width, frame_height))) => {
-                // Save single sprite sheet
-                let sheet_filename = format!("{}.png", effect_id);
-                let sheet_path = sprites_dir.join(&sheet_filename);
-                self.save_effect_sprite_png(&sprite_sheet, &sheet_path)?;
-                println!(
-                    " -> SUCCESS: Sprite sheet saved to {}",
-                    sheet_path.display()
-                );
+        let Some(canvas_box) = renderer::get_effect_animation_canvas_box(wan_file, anim_index)?
+        else {
+            println!(" -> WARNING: Animation is empty or has no visible pixels. Skipping.");
+            return Ok(None);
+        };
+        let frame_width = (canvas_box.2 - canvas_box.0) as u32;
+        let frame_height = (canvas_box.3 - canvas_box.1) as u32;
 
-                // Get animation sequence for timing data
-                let animation_sequence = match &wan_file.animations {
-                    AnimationStructure::Effect(groups) => {
-                        groups.first().and_then(|group| group.get(anim_index))
-                    }
-                    AnimationStructure::Character(_) => None,
-                };
-
-                let effect_definition = self.build_sprite_effect_definition_directional(
-                    effect_info,
-                    effect_id,
-                    anim_index,
-                    frame_width,
-                    frame_height,
-                    animation_sequence,
-                    false,
-                    1,
-                );
-
-                Ok(Some(effect_definition))
-            }
-            Ok(None) => {
-                println!(" -> WARNING: Animation is empty or has no visible pixels. Skipping.");
-                Ok(None)
-            }
-            Err(e) => Err(io::Error::new(
-                io::ErrorKind::Other,
-                format!("Failed to render sprite sheet: {:?}", e),
-            )),
+        for offset in draw_order.sheet_variants() {
+            let Some((sprite_sheet, _, _)) = renderer::render_effect_animation_sheet_with_canvas(
+                wan_file,
+                anim_index,
+                Some(canvas_box),
+                offset,
+            )?
+            else {
+                println!(" -> WARNING: Animation has no frames. Skipping.");
+                return Ok(None);
+            };
+            let sheet_path = sprites_dir.join(format!("{}.png", sheet_stem(effect_id, offset)));
+            self.save_effect_sprite_png(&sprite_sheet, &sheet_path)?;
+            println!(
+                " -> SUCCESS: Sprite sheet saved to {}",
+                sheet_path.display()
+            );
         }
+
+        Ok(Some(self.build_sprite_effect_definition_directional(
+            effect_info,
+            effect_id,
+            anim_index,
+            frame_width,
+            frame_height,
+            effect_sequence(wan_file, anim_index),
+            false,
+            1,
+            draw_order,
+        )))
     }
 
     /// Builds the `SpriteEffect` data structure from a rendered animation.
+    #[allow(clippy::too_many_arguments)]
     fn build_sprite_effect_definition_directional(
         &self,
         effect_info: &EffectAnimationInfo,
@@ -475,84 +482,75 @@ impl<'a> EffectAssetPipeline<'a> {
         animation_sequence: Option<&crate::graphics::wan::model::Animation>,
         is_directional: bool,
         direction_count: u8,
+        draw_order: &DrawOrderOffsets,
     ) -> EffectDefinition {
-        // Handle case where animation sequence is missing
-        let animation_sequence = match animation_sequence {
-            Some(anim) => anim,
-            None => {
-                return EffectDefinition::Sprite(SpriteEffect {
-                    sprite_sheet: format!("res://effect_sprites/{}.png", effect_id),
-                    frame_width: frame_width.max(1),
-                    frame_height: frame_height.max(1),
-                    animations: HashMap::new(),
-                    is_directional,
-                    direction_count,
-                    base_animation_index: base_animation_index as u32,
-                    is_non_blocking: effect_info.is_non_blocking,
-                });
-            }
-        };
+        let mut animations = HashMap::new();
 
-        let frame_details: Vec<[f32; 3]> = animation_sequence
-            .frames
+        if let Some(animation_sequence) = animation_sequence {
+            let frame_details: Vec<[f32; 3]> = animation_sequence
+                .frames
+                .iter()
+                .map(|frame| {
+                    let duration_sec = ticks_to_seconds(frame.duration);
+                    // zero out the offsets in the JSON since they're now baked into animation sheet
+                    [duration_sec, 0.0, 0.0]
+                })
+                .collect();
+
+            // Check if all frames have the same duration and zero offset
+            let is_simple = if frame_details.len() > 1 {
+                let first_duration = frame_details[0][0];
+                frame_details.iter().all(|frame| {
+                    (frame[0] - first_duration).abs() < f32::EPSILON
+                        && frame[1] == 0.0
+                        && frame[2] == 0.0
+                })
+            } else {
+                // A single frame animation is simple if its offset is zero
+                matches!(frame_details.first(), Some(f) if f[1] == 0.0 && f[2] == 0.0)
+            };
+
+            let animation_details = if is_simple {
+                AnimationDetails::Simple {
+                    frame_count: frame_details.len(),
+                    duration: frame_details.first().map(|f| f[0]).unwrap_or(0.1),
+                }
+            } else {
+                AnimationDetails::Complex {
+                    frames: frame_details,
+                }
+            };
+
+            animations.insert(
+                "play".to_string(),
+                AnimationSequence {
+                    looping: effect_info.loop_flag,
+                    details: animation_details,
+                },
+            );
+        }
+
+        let layers = draw_order
+            .layer_offsets()
             .iter()
-            .map(|frame| {
-                let duration_sec = ticks_to_seconds(frame.duration);
-                // zero out the offsets in the JSON since they're now baked into animation sheet
-                [duration_sec, 0.0, 0.0]
+            .map(|&offset| SpriteLayer {
+                draw_order_offset: offset,
+                sprite_sheet: sheet_index_path(effect_id, Some(offset), is_directional),
             })
             .collect();
 
-        // Check if all frames have the same duration and zero offset
-        let is_simple = if frame_details.len() > 1 {
-            let first_duration = frame_details[0][0];
-            frame_details.iter().all(|frame| {
-                (frame[0] - first_duration).abs() < f32::EPSILON
-                    && frame[1] == 0.0
-                    && frame[2] == 0.0
-            })
-        } else {
-            // A single frame animation is simple if its offset is zero
-            matches!(frame_details.first(), Some(f) if f[1] == 0.0 && f[2] == 0.0)
-        };
-
-        let animation_details = if is_simple {
-            AnimationDetails::Simple {
-                frame_count: frame_details.len(),
-                duration: frame_details.get(0).map(|f| f[0]).unwrap_or(0.1),
-            }
-        } else {
-            AnimationDetails::Complex {
-                frames: frame_details,
-            }
-        };
-
-        let mut animations = HashMap::new();
-        animations.insert(
-            "play".to_string(),
-            AnimationSequence {
-                looping: effect_info.loop_flag,
-                details: animation_details,
-            },
-        );
-
-        // For directional effects, sprite_sheet is the base path without _dir{N} suffix
-        // Client will append _dir{direction}.png based on attacker direction
-        let sprite_sheet_path = if is_directional {
-            format!("res://effect_sprites/{}", effect_id)
-        } else {
-            format!("res://effect_sprites/{}.png", effect_id)
-        };
-
         EffectDefinition::Sprite(SpriteEffect {
-            sprite_sheet: sprite_sheet_path,
-            frame_width,
-            frame_height,
+            sprite_sheet: sheet_index_path(effect_id, None, is_directional),
+            frame_width: frame_width.max(1),
+            frame_height: frame_height.max(1),
             animations,
             is_directional,
             direction_count,
             base_animation_index: base_animation_index as u32,
             is_non_blocking: effect_info.is_non_blocking,
+            draw_order_offset: draw_order.uniform(),
+            draw_order_offsets: draw_order.0.clone(),
+            layers,
         })
     }
 
@@ -963,6 +961,77 @@ impl<'a> EffectAssetPipeline<'a> {
             is_non_blocking: effect_info.is_non_blocking,
             frames: frames_meta,
         })))
+    }
+}
+
+/// Distinct per-piece draw order offsets of one effect, sorted ascending. Never empty.
+struct DrawOrderOffsets(Vec<i8>);
+
+impl DrawOrderOffsets {
+    fn from_set(set: BTreeSet<i8>) -> Self {
+        if set.is_empty() {
+            Self(vec![0])
+        } else {
+            Self(set.into_iter().collect())
+        }
+    }
+
+    /// Fragments use more than one offset, so the effect wraps around other sprites.
+    fn is_mixed(&self) -> bool {
+        self.0.len() > 1
+    }
+
+    /// The whole effect's offset when uniform. 0 when mixed (layers carry the real values).
+    fn uniform(&self) -> i8 {
+        if self.is_mixed() {
+            0
+        } else {
+            self.0[0]
+        }
+    }
+
+    /// Offsets that get their own sheet. Empty for uniform effects.
+    fn layer_offsets(&self) -> &[i8] {
+        if self.is_mixed() {
+            &self.0
+        } else {
+            &[]
+        }
+    }
+
+    /// The flattened sheet (`None`) first, then one entry per layer.
+    fn sheet_variants(&self) -> impl Iterator<Item = Option<i8>> + '_ {
+        std::iter::once(None).chain(self.layer_offsets().iter().copied().map(Some))
+    }
+}
+
+/// File stem shared by every sheet of an effect: `{id}`, or `{id}_offset_{offset}` for a
+/// draw order layer. Directional sheets append `_dir{d}`, and all sheets end in `.png`.
+fn sheet_stem(effect_id: u16, offset: Option<i8>) -> String {
+    match offset {
+        Some(offset) => format!("{}_offset_{}", effect_id, offset),
+        None => effect_id.to_string(),
+    }
+}
+
+/// Index path for a sheet. A directional path is the base the client appends `_dir{d}.png` to.
+fn sheet_index_path(effect_id: u16, offset: Option<i8>, is_directional: bool) -> String {
+    let stem = sheet_stem(effect_id, offset);
+    if is_directional {
+        format!("res://effect_sprites/{}", stem)
+    } else {
+        format!("res://effect_sprites/{}.png", stem)
+    }
+}
+
+/// Sequence `index` of an effect WAN's group 0, the only group the ROM reads.
+fn effect_sequence(
+    wan_file: &WanFile,
+    index: usize,
+) -> Option<&crate::graphics::wan::model::Animation> {
+    match &wan_file.animations {
+        AnimationStructure::Effect(groups) => groups.first().and_then(|g| g.get(index)),
+        AnimationStructure::Character(_) => None,
     }
 }
 

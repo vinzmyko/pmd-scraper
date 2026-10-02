@@ -104,10 +104,12 @@ pub fn get_effect_animation_canvas_box(
 
 /// Renders a complete animation sequence to a single horizontal sprite sheet image.
 /// If `fixed_canvas_box` is provided, uses those dimensions instead of calculating from bounds.
+/// If `offset_filter` is provided, only pieces with that `draw_order_offset` are drawn.
 pub fn render_effect_animation_sheet_with_canvas(
     wan_file: &WanFile,
     animation_index: usize,
     fixed_canvas_box: Option<(i16, i16, i16, i16)>,
+    offset_filter: Option<i8>,
 ) -> Result<Option<(RgbaImage, u32, u32)>, WanError> {
     // Animation_index is a sequence index into group 0 ONLY
     let animation = match &wan_file.animations {
@@ -170,6 +172,7 @@ pub fn render_effect_animation_sheet_with_canvas(
                 meta_frame_index,
                 canvas_box,
                 (seq_frame.offset.0, seq_frame.offset.1),
+                offset_filter,
             )?;
             rendered_frames.push(frame_image);
         } else {
@@ -191,7 +194,7 @@ pub fn render_effect_animation_sheet(
     wan_file: &WanFile,
     animation_index: usize,
 ) -> Result<Option<(RgbaImage, u32, u32)>, WanError> {
-    render_effect_animation_sheet_with_canvas(wan_file, animation_index, None)
+    render_effect_animation_sheet_with_canvas(wan_file, animation_index, None, None)
 }
 
 /// Calculates the maximum bounding box that encloses every frame in an animation sequence
@@ -250,6 +253,7 @@ fn render_meta_frame_on_canvas(
     meta_frame_index: usize,
     canvas_box: (i16, i16, i16, i16),
     offset: (i16, i16),
+    offset_filter: Option<i8>,
 ) -> Result<RgbaImage, WanError> {
     let canvas_width = (canvas_box.2 - canvas_box.0).max(1) as u32;
     let canvas_height = (canvas_box.3 - canvas_box.1).max(1) as u32;
@@ -258,6 +262,9 @@ fn render_meta_frame_on_canvas(
     let frame_data = &wan.frame_data[meta_frame_index];
 
     for piece in &frame_data.pieces {
+        if offset_filter.is_some_and(|o| piece.draw_order_offset() != o) {
+            continue;
+        }
         let pal_num = piece.palette_index as usize;
 
         if pal_num >= wan.custom_palette.len() {
