@@ -11,7 +11,7 @@ use serde::Serialize;
 
 /// Bump ONLY when scraper output format or content changes.
 /// Each bump costs a new rescrape.
-pub const SCRAPER_VERSION: u32 = 1;
+pub const SCRAPER_VERSION: u32 = 2;
 
 #[derive(Serialize)]
 pub struct ScrapeInfo {
