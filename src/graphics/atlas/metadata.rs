@@ -29,6 +29,8 @@ pub struct AtlasMetadata {
     pub anchor_y: i32,
     pub total_frames_in_atlas: u32,
     pub shadow_size: u8,
+    /// monster.md body size.
+    pub body_size: u8,
     pub animations: HashMap<String, AtlasAnimationInfo>,
 }
 
@@ -92,7 +94,7 @@ pub fn generate_metadata(
     frame_height: u32,
     layout: &AtlasLayout,
     frame_mapping: &[usize],
-    shadow_size: u8,
+    traits: super::MonsterTraits,
 ) -> Result<AtlasMetadata, super::AtlasError> {
     let mut output_animations: HashMap<String, AtlasAnimationInfo> = HashMap::new();
     let total_unique_frames = frame_mapping.iter().max().map_or(0, |&max_idx| max_idx + 1);
@@ -223,7 +225,8 @@ pub fn generate_metadata(
         anchor_x: layout.anchor_x,
         anchor_y: layout.anchor_y,
         total_frames_in_atlas: total_unique_frames as u32,
-        shadow_size,
+        shadow_size: traits.shadow_size,
+        body_size: traits.body_size,
         animations: output_animations,
     })
 }

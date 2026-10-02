@@ -45,6 +45,13 @@ impl Default for AtlasConfig {
     }
 }
 
+/// Per-species values copied from monster.md into the atlas JSON.
+#[derive(Debug, Clone, Copy)]
+pub struct MonsterTraits {
+    pub shadow_size: u8,
+    pub body_size: u8,
+}
+
 /// The final result of the atlas generation process
 #[derive(Debug)]
 pub struct AtlasResult {
@@ -109,7 +116,7 @@ pub fn create_pokemon_atlas(
     wan_files: &HashMap<String, WanFile>,
     pokemon_id: usize, // monster.md
     dex_num: u16,
-    monster_shadow_size: u8,
+    traits: MonsterTraits,
     config: &AtlasConfig,
     output_dir: &Path,
     folder_name: &str,
@@ -205,7 +212,7 @@ pub fn create_pokemon_atlas(
         frame_height,
         &atlas_layout,
         &frame_mapping,
-        monster_shadow_size,
+        traits,
     )?;
 
     // Save Results
