@@ -1,5 +1,14 @@
 use std::io;
 
+use crate::rom::Rom;
+
+/// monster.md's path in the ROM file table.
+const MONSTER_MD_PATH: &str = "BALANCE/monster.md";
+
+/// Indices at and above this are the secondary-gender copies of `index - 600`.
+/// The ROM compares species as `id % 600` for the same reason.
+const GENDER_SPLIT: usize = 600;
+
 /// Magic number for .md files
 const MD_MAGIC: &[u8; 4] = b"MD\0\0";
 const MD_ENTRY_LEN: usize = 68;
@@ -86,6 +95,8 @@ pub struct MonsterEntry {
     pub national_pokedex_number: u16,
     pub sprite_index: i16,
     pub gender: u8,
+    /// Body size. ROM FUN_02322f78 spawns no range-1 projectile at 4 or more.
+    pub body_size: u8,
     pub base_form_index: u16,
     pub stats: MonsterStats,
     pub type_primary: PokemonType,
@@ -129,6 +140,7 @@ impl MonsterData {
                 u16::from_le_bytes([data[start + 0x04], data[start + 0x05]]);
             let sprite_index = i16::from_le_bytes([data[start + 0x10], data[start + 0x11]]);
             let gender = data[start + 0x12];
+            let body_size = data[start + 0x13];
             let base_form_index = u16::from_le_bytes([data[start + 0x32], data[start + 0x33]]);
 
             let type_primary = PokemonType::from(data[start + 0x14]);
@@ -148,6 +160,7 @@ impl MonsterData {
                 national_pokedex_number,
                 sprite_index,
                 gender,
+                body_size,
                 base_form_index,
                 stats: MonsterStats {
                     base_hp,
@@ -164,5 +177,27 @@ impl MonsterData {
         }
 
         Ok(Self { entries })
+    }
+
+    /// Load and parse `BALANCE/monster.md` from `rom`.
+    pub fn from_rom(rom: &Rom) -> io::Result<Self> {
+        let file_id = rom
+            .fnt
+            .get_file_id(MONSTER_MD_PATH)
+            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "monster.md not found"))?;
+        let data = rom
+            .fat
+            .get_file_data(file_id as usize, &rom.data)
+            .ok_or_else(|| {
+                io::Error::new(io::ErrorKind::InvalidData, "Failed to extract monster.md")
+            })?;
+        Self::parse(data)
+    }
+
+    /// National dex number for a ROM monster index, or None if out of range.
+    pub fn dex_for_md_index(&self, md_index: u16) -> Option<u16> {
+        self.entries
+            .get(md_index as usize % GENDER_SPLIT)
+            .map(|entry| entry.national_pokedex_number)
     }
 }

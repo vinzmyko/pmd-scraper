@@ -1,6 +1,6 @@
 use std::{fmt, io::Cursor};
 
-use crate::binary_utils::{self};
+use crate::{binary_utils, data::monster_md::MonsterData};
 
 use serde::{Deserialize, Serialize};
 
@@ -114,7 +114,7 @@ pub struct RawMoveAnimationInfo {
     pub effect_id_4: u16, // Offset 0x6: Effect layer 4
 
     // Behavior flags (offset 0x8) - packed into single byte
-    pub projectile_wave_pattern: u8, // Bits 0-2: Bits 0-2: 0=straight, 1=vertical sine, 2=spiral
+    pub projectile_wave_pattern: u8, // Bits 0-2: Bits 0-2: 0=straight, 1=vertical bump, 2=sideways bulge
     pub dual_target: bool,           // Bit 3: plays effect on both attacker and target
     pub skip_fade_in: bool,          // Bit 4: If true, skip screen fade-in effect
     pub face_direction_with_delay: bool, // Bit 5: resets attacker facing direction + adds pre-animation pause
@@ -144,7 +144,7 @@ pub struct MoveAnimationInfo {
     pub effect_id_4: u16,
 
     // Flags (offset 0x8)
-    pub projectile_wave_pattern: u8, // Bits 0-2: Bits 0-2: 0=straight, 1=vertical sine, 2=spiral
+    pub projectile_wave_pattern: u8, // Bits 0-2: Bits 0-2: 0=straight, 1=vertical bump, 2=sideways bulge
     pub dual_target: bool,           // Bit 3: plays effect on both attacker and target
     pub skip_fade_in: bool,          // Bit 4: Skip screen fade-in effect
     pub face_direction_with_delay: bool, // Bit 5: resets attacker facing direction + adds pre-animation pause
@@ -223,7 +223,10 @@ pub struct EffectAnimationInfo {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SpecialMoveAnimationInfo {
+    /// ROM monster.md index.
     pub pokemon_id: u16,
+    /// National dex number for `pokemon_id`. 0 when unknown.
+    pub dex_id: u16,
     pub user_animation_index: u8,
     pub point: AnimPointType,
     pub sfx_id: u16,
@@ -240,7 +243,10 @@ pub struct AnimData {
 
 impl AnimData {
     // Transform raw move data into final format with embedded special animations
-    pub fn transform_move_data(&self) -> std::collections::HashMap<usize, MoveAnimationInfo> {
+    pub fn transform_move_data(
+        &self,
+        monsters: &MonsterData,
+    ) -> std::collections::HashMap<usize, MoveAnimationInfo> {
         let mut move_map = std::collections::HashMap::new();
 
         for (idx, raw_move) in self.raw_move_table.iter().enumerate() {
@@ -252,7 +258,13 @@ impl AnimData {
                 let end_idx = start_idx + raw_move.special_animation_count as usize;
 
                 if end_idx <= self.special_move_table.len() {
-                    special_animations = self.special_move_table[start_idx..end_idx].to_vec();
+                    special_animations = self.special_move_table[start_idx..end_idx]
+                        .iter()
+                        .map(|special| SpecialMoveAnimationInfo {
+                            dex_id: monsters.dex_for_md_index(special.pokemon_id).unwrap_or(0),
+                            ..special.clone()
+                        })
+                        .collect();
                 }
             }
 
@@ -497,6 +509,7 @@ pub fn parse_animation_data(data: &[u8]) -> Result<AnimData, String> {
 
         special_move_table.push(SpecialMoveAnimationInfo {
             pokemon_id: pkmn_id,
+            dex_id: 0,
             user_animation_index: animation,
             point,
             sfx_id: sfx,

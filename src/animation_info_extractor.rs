@@ -5,9 +5,12 @@ use std::{
 };
 
 use crate::{
-    data::animation_info::{
-        AnimData, EffectAnimationInfo as GeneralAnim, ItemAnimationInfo as ItemAnim,
-        MoveAnimationInfo as MoveAnim, TrapAnimationInfo as TrapAnim,
+    data::{
+        animation_info::{
+            AnimData, EffectAnimationInfo as GeneralAnim, ItemAnimationInfo as ItemAnim,
+            MoveAnimationInfo as MoveAnim, TrapAnimationInfo as TrapAnim,
+        },
+        monster_md::MonsterData,
     },
     rom::Rom,
 };
@@ -45,7 +48,9 @@ impl<'a> AnimationInfoExtractor<'a> {
 
         self.save_trap_animations_json(&json_dir, &anim_data.trap_table)?;
         self.save_item_animations_json(&json_dir, &anim_data.item_table)?;
-        self.save_move_animation_info_json(&json_dir, anim_data)?;
+        let monsters = MonsterData::from_rom(self.rom)
+            .map_err(|e| format!("Failed to load monster.md: {}", e))?;
+        self.save_move_animation_info_json(&json_dir, anim_data, &monsters)?;
         self.save_effect_animation_table_json(&json_dir, &anim_data.effect_table)?;
 
         self.save_animation_summary(&json_dir, anim_data)?;
@@ -86,11 +91,12 @@ impl<'a> AnimationInfoExtractor<'a> {
         &self,
         dir: &Path,
         anim_data: &AnimData,
+        monsters: &MonsterData,
     ) -> Result<(), String> {
         let file_path = dir.join("move_animation_info.json");
 
         // Transform the raw move data to the final format with embedded special animations
-        let move_map = anim_data.transform_move_data();
+        let move_map = anim_data.transform_move_data(monsters);
 
         let move_map_str: HashMap<String, &MoveAnim> = move_map
             .iter()

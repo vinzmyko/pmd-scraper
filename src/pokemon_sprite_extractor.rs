@@ -15,7 +15,7 @@ use crate::{
     },
     data::{monster_md::MonsterData, MonsterEntry},
     graphics::{
-        atlas::{create_pokemon_atlas, AtlasConfig},
+        atlas::{create_pokemon_atlas, AtlasConfig, MonsterTraits},
         wan::{parser, Animation, AnimationStructure, FrameOffset, WanFile},
         WanType,
     },
@@ -50,11 +50,6 @@ impl<'a> PokemonSpriteExtractor<'a> {
         reporter: &mut ProgressReporter,
     ) -> io::Result<()> {
         // Load all necessary data files
-        let monster_md_id = self
-            .rom
-            .fnt
-            .get_file_id("BALANCE/monster.md")
-            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "monster.md not found"))?;
         let monster_bin_id = self
             .rom
             .fnt
@@ -65,13 +60,6 @@ impl<'a> PokemonSpriteExtractor<'a> {
             .fnt
             .get_file_id("MONSTER/m_attack.bin")
             .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "m_attack.bin not found"))?;
-        let monster_md_data = self
-            .rom
-            .fat
-            .get_file_data(monster_md_id as usize, &self.rom.data)
-            .ok_or_else(|| {
-                io::Error::new(io::ErrorKind::InvalidData, "Failed to extract monster.md")
-            })?;
         let monster_bin_data = self
             .rom
             .fat
@@ -88,7 +76,8 @@ impl<'a> PokemonSpriteExtractor<'a> {
             })?;
 
         println!("Parsing monster.md...");
-        let monster_md = parse_monster_md(monster_md_data)?;
+        let monster_md = MonsterData::from_rom(self.rom)?.entries;
+        println!("Found {} entries in monster.md", monster_md.len());
         println!("Parsing monster.bin...");
         let monster_bin = BinPack::from_bytes(monster_bin_data)?;
         println!("Parsing m_attack.bin...");
@@ -567,7 +556,10 @@ impl<'a> PokemonSpriteExtractor<'a> {
         let mut wan_files = HashMap::new();
         wan_files.insert("merged".to_string(), merged_wan);
 
-        let shadow_size = entry.shadow_size as u8;
+        let traits = MonsterTraits {
+            shadow_size: entry.shadow_size as u8,
+            body_size: entry.body_size,
+        };
 
         println!("Generating sprite atlas for {}...", folder_name);
 
@@ -575,7 +567,7 @@ impl<'a> PokemonSpriteExtractor<'a> {
             &wan_files,
             id,
             entry.national_pokedex_number,
-            shadow_size,
+            traits,
             context.atlas_config,
             context.output_dir,
             folder_name,

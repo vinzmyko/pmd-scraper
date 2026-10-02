@@ -29,6 +29,7 @@ use std::{collections::HashMap, fs, path::PathBuf};
 use clap::Parser;
 
 use crate::{
+    data::monster_md::MonsterData,
     dungeon_bin_extractor::{extract_dungeon_extras, extract_dungeon_tilesets},
     phases::PhaseId,
     progress::ProgressReporter,
@@ -183,7 +184,8 @@ fn main() {
                         .enumerate()
                         .map(|(idx, info)| (idx as u16, info))
                         .collect();
-                    let moves_map = anim.transform_move_data();
+                    let monsters = MonsterData::from_rom(&rom).expect("Failed to load monster.md");
+                    let moves_map = anim.transform_move_data(&monsters);
 
                     let mut pipeline = EffectAssetPipeline::new(&rom);
                     let _ = pipeline.run(
